@@ -72,10 +72,17 @@ All notable changes to LLM-Rosetta are documented here. This project follows [Ke
 - **修复 `max_tool_description_length` 未从 provider YAML 加载** (PR [#667](https://github.com/Oaklight/llm-rosetta/pull/667))：YAML loader 静默丢弃了声明的阈值，导致 shim 级别默认值的 tool description relocation 从未生效。由 [@caidao22](https://github.com/caidao22) 贡献。
 - **YAML loader 字段覆盖度 guard test** (PR [#674](https://github.com/Oaklight/llm-rosetta/pull/674))：基于 AST 的 CI 测试，验证每个 `ProviderShim` dataclass 字段都出现在 loader 构造调用中，防止静默遗漏。同时修复了 `hoist_system_messages` 未从 YAML 加载的问题。
 
+### 转换器 — 工具命名空间
+
+- **Responses API 的工具命名空间往返** (PR [#753](https://github.com/Oaklight/llm-rosetta/pull/753))：Responses 客户端可以在 `namespace` 容器中声明工具，但上游没有命名空间概念，因此工具必须被扁平化为单一列表。新增双向 `ToolNameMap` 记录 `(name, namespace)` ↔ 扁平名称的对应关系，使响应侧能够还原命名空间。冲突的名称会被限定为 `{namespace}_{name}`（上限 64 字符），依次回退到截断的命名空间，再回退到 `sha256[:8]` 后缀。摘要的种子取自 `(namespace, name, attempt)` 而非列表位置，因此相同请求产生相同的上游名称，provider 侧的 prompt 缓存依然有效。此前无法限定的工具会保留其裸名称，导致两个不同的工具以相同拼写到达上游。`tool_choice` 和 `allowed_tools` 中的工具名称同样会被转换。由 [@caidao22](https://github.com/caidao22) 贡献。
+- **移除 `openai_responses` 中不可达的 custom tool 降级分支** (PR [#751](https://github.com/Oaklight/llm-rosetta/pull/751))：`tool_ops.py` 中有一处写入 `metadata["provider_type"]` 的降级分支永远不会执行——`{function, mcp, custom}` 之外的类型会在更早处作为 passthrough 返回，而 `custom` 本身就是 IR 允许的类型。真正生效的降级路径是 `capabilities.downgrade_custom_tools`，它记录 `metadata["_downgraded_from"]`。行为无变化。由 [@caidao22](https://github.com/caidao22) 贡献。
+
 ### 基础设施
 
 - **Zerodep 自动更新 CI workflow** (PR [#657](https://github.com/Oaklight/llm-rosetta/pull/657))：自动化更新 vendored zerodep 模块的 workflow。
 - **更新 vendored zerodep 模块** (PR [#658](https://github.com/Oaklight/llm-rosetta/pull/658))。
+- **集成测试不再中断收集过程** (PR [#750](https://github.com/Oaklight/llm-rosetta/pull/750))：`SystemExit` 不继承自 `Exception`，因此集成测试脚本中用于检查凭据的 `sys.exit(1)` 绕过了 pytest 的收集处理，导致整个测试运行以 `INTERNALERROR` 中止且收集到零个测试。新增的 `tests/integration/conftest.py` 收集器会将凭据退出以及设计上可选的包的 `ImportError` 转换为模块级 skip。由 [@caidao22](https://github.com/caidao22) 贡献。
+- **修复 pipeline profile 断言的随机失败** (PR [#749](https://github.com/Oaklight/llm-rosetta/pull/749))：每个 profile 数值都独立舍入到 0.01 ms，因此各部分之和可能比总计高出若干个舍入步长，而实际并无异常。原有的 10% 容差在这些时长下小于一个舍入步长。现改为依据舍入量级推导的绝对容差，在数值较大时反而更严格。由 [@caidao22](https://github.com/caidao22) 贡献。
 
 ## v0.13.0 — 2026-09-08
 
